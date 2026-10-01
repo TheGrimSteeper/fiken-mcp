@@ -5,6 +5,7 @@ const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
 import { get, mutate, cp, slug, uploadMultipart } from "../client.js";
+import { resetLimiter } from "../limiter.js";
 
 function makeResponse(status: number, body: unknown, headers: Record<string, string> = {}) {
     const headersMap = new Map(Object.entries(headers));
@@ -25,6 +26,7 @@ describe("client", () => {
         process.env.FIKEN_API_TOKEN = "test-token";
         process.env.FIKEN_COMPANY_SLUG = "test-slug";
         mockFetch.mockReset();
+        resetLimiter();
     });
 
     afterEach(() => {
@@ -259,6 +261,88 @@ describe("client", () => {
             await expect(
                 uploadMultipart("/companies/test-slug/purchases/1/attachments", {}, new FormData()),
             ).rejects.toThrow("Fiken 400: Bad Request");
+        });
+    });
+    describe("limiter integration and retries", () => {
+        it("retries a GET on 429 and 503, then returns the success", async () => {
+            mockFetch
+                .mockResolvedValueOnce(makeResponse(429, "slow down"))
+                .mockResolvedValueOnce(makeResponse(503, "busy", { "Retry-After": "0" }))
+                .mockResolvedValueOnce(makeResponse(200, { ok: 1 }));
+            await expect(get("/user")).resolves.toEqual({ ok: 1 });
+            expect(mockFetch).toHaveBeenCalledTimes(3);
+        });
+
+        it("waits for Retry-After seconds before retrying a GET", async () => {
+            vi.useFakeTimers();
+            try {
+                mockFetch
+                    .mockResolvedValueOnce(makeResponse(429, "slow down", { "Retry-After": "2" }))
+                    .mockResolvedValueOnce(makeResponse(200, { ok: 1 }));
+                const pending = get("/user");
+                await vi.advanceTimersByTimeAsync(1999);
+                expect(mockFetch).toHaveBeenCalledTimes(1);
+                await vi.advanceTimersByTimeAsync(1);
+                await expect(pending).resolves.toEqual({ ok: 1 });
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it.each([
+            ["invalid", "nope"],
+            ["unset", undefined],
+        ])("uses a 1 s backoff base when FIKEN_RETRY_BASE_MS is %s", async (_label, value) => {
+            if (value === undefined) delete process.env.FIKEN_RETRY_BASE_MS;
+            else process.env.FIKEN_RETRY_BASE_MS = value;
+            vi.useFakeTimers();
+            try {
+                mockFetch
+                    .mockResolvedValueOnce(makeResponse(429, "slow down"))
+                    .mockResolvedValueOnce(makeResponse(200, { ok: 1 }));
+                const pending = get("/user");
+                await vi.advanceTimersByTimeAsync(999);
+                expect(mockFetch).toHaveBeenCalledTimes(1);
+                await vi.advanceTimersByTimeAsync(1);
+                await expect(pending).resolves.toEqual({ ok: 1 });
+            } finally {
+                vi.useRealTimers();
+                process.env.FIKEN_RETRY_BASE_MS = "0";
+            }
+        });
+
+        it("gives up on a GET after three retries", async () => {
+            mockFetch.mockResolvedValue(makeResponse(429, "slow down"));
+            await expect(get("/user")).rejects.toThrow("Fiken 429: slow down");
+            expect(mockFetch).toHaveBeenCalledTimes(4);
+        });
+
+        it("never retries a write on 429", async () => {
+            mockFetch.mockResolvedValue(makeResponse(429, "slow down"));
+            await expect(mutate("POST", "/x", {})).rejects.toThrow("Fiken 429");
+            expect(mockFetch).toHaveBeenCalledOnce();
+        });
+
+        it("warns that a write may have completed when the connection fails", async () => {
+            mockFetch.mockRejectedValue(new Error("socket hang up"));
+            await expect(mutate("POST", "/x", {})).rejects.toThrow(
+                "Fiken request failed (socket hang up). A write may have completed: read back before retrying.",
+            );
+            mockFetch.mockRejectedValue("reset");
+            await expect(uploadMultipart("/x", undefined, new FormData())).rejects.toThrow(
+                "Fiken request failed (reset)",
+            );
+        });
+
+        it("rethrows network errors on reads unchanged", async () => {
+            mockFetch.mockRejectedValue(new Error("ECONNREFUSED"));
+            await expect(get("/user")).rejects.toThrow("ECONNREFUSED");
+        });
+
+        it("truncates long error bodies", async () => {
+            mockFetch.mockResolvedValue(makeResponse(400, "x".repeat(5000)));
+            const err = await get("/user").catch((e: Error) => e);
+            expect((err as Error).message.length).toBe("Fiken 400: ".length + 1000);
         });
     });
 });
