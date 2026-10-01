@@ -1,4 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { DRAFT_TOOLS, assertAllRegistered, restrictTools, toolProfile } from "./profile.js";
 
 import { register as registerUser } from "./tools/user.js";
 import { register as registerAccounts } from "./tools/accounts.js";
@@ -12,26 +13,34 @@ import { register as registerTransactions } from "./tools/transactions.js";
 import { register as registerPurchases } from "./tools/purchases.js";
 import { register as registerSales } from "./tools/sales.js";
 import { register as registerMisc } from "./tools/misc.js";
+import { register as registerSuppliers } from "./tools/suppliers.js";
 
-/** Build an MCP server with every tool module registered. */
-export function createMcpServer(): McpServer {
+/**
+ * Build an MCP server. In the "drafts" profile only DRAFT_TOOLS are registered;
+ * every other tool is left out entirely.
+ */
+export function createMcpServer(profile = toolProfile()): McpServer {
     const server = new McpServer({
         name: "fiken-mcp",
         version: "1.0.0",
     });
+    const restricted = profile === "drafts" ? restrictTools(server, DRAFT_TOOLS) : undefined;
+    const target = restricted?.server ?? server;
 
-    registerUser(server);
-    registerAccounts(server);
-    registerContacts(server);
-    registerInvoices(server);
-    registerCreditNotes(server);
-    registerOffers(server);
-    registerOrderConfirmations(server);
-    registerJournalEntries(server);
-    registerTransactions(server);
-    registerPurchases(server);
-    registerSales(server);
-    registerMisc(server);
+    registerUser(target);
+    registerAccounts(target);
+    registerContacts(target);
+    registerInvoices(target);
+    registerCreditNotes(target);
+    registerOffers(target);
+    registerOrderConfirmations(target);
+    registerJournalEntries(target);
+    registerTransactions(target);
+    registerPurchases(target);
+    registerSales(target);
+    registerMisc(target);
+    registerSuppliers(target);
 
+    if (restricted) assertAllRegistered(DRAFT_TOOLS, restricted.registered());
     return server;
 }
