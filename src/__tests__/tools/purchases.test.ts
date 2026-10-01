@@ -215,6 +215,17 @@ describe("fiken_add_purchase_attachment", () => {
         expect(duplicate.content[0].text).toContain("Provide only one of filePath or fileBase64");
     });
 
+    it("requires a filename when using fileBase64", async () => {
+        const result = await server.getHandler("fiken_add_purchase_attachment")({
+            purchaseId: 1,
+            fileBase64: Buffer.from("pdf").toString("base64"),
+            attachToSale: true,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("filename is required when using fileBase64");
+    });
+
     it("rejects unsupported filenames", async () => {
         const result = await server.getHandler("fiken_add_purchase_attachment")({
             purchaseId: 1,
