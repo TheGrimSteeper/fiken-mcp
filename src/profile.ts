@@ -18,9 +18,9 @@ export const DRAFT_TOOLS: ReadonlySet<string> = new Set([
     "fiken_list_purchase_drafts",
     "fiken_get_purchase_draft",
     "fiken_get_purchase_draft_attachments",
-    // Writes limited to drafts and supplier master data
-    "fiken_create_purchase_draft",
-    "fiken_update_purchase_draft",
+    "fiken_get_paperless_import_status",
+    // Writes limited to validated drafts (always with the voucher attached) and suppliers
+    "fiken_create_purchase_draft_from_paperless",
     "fiken_create_supplier",
 ]);
 

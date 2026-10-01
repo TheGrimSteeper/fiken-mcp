@@ -44,11 +44,13 @@ describe("createMcpServer tool profiles", () => {
         expect(JSON.stringify(result.content)).toContain("not found");
     });
 
-    it("full keeps every upstream tool plus fiken_create_supplier", async () => {
+    it("full keeps every upstream tool plus the fork's three tools", async () => {
         const { names } = await toolNames("full");
-        expect(names.length).toBe(107);
+        expect(names.length).toBe(109);
         expect(names).toContain("fiken_create_purchase_from_draft");
         expect(names).toContain("fiken_create_supplier");
+        expect(names).toContain("fiken_create_purchase_draft_from_paperless");
+        expect(names).toContain("fiken_get_paperless_import_status");
         // Proves the forbidden-list names are real, so the drafts check above is meaningful.
         for (const name of FORBIDDEN) expect(names).toContain(name);
     });

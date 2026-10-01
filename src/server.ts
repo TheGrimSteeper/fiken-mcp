@@ -14,6 +14,7 @@ import { register as registerPurchases } from "./tools/purchases.js";
 import { register as registerSales } from "./tools/sales.js";
 import { register as registerMisc } from "./tools/misc.js";
 import { register as registerSuppliers } from "./tools/suppliers.js";
+import { register as registerPaperlessDrafts } from "./tools/paperlessDrafts.js";
 
 /**
  * Build an MCP server. In the "drafts" profile only DRAFT_TOOLS are registered;
@@ -40,6 +41,7 @@ export function createMcpServer(profile = toolProfile()): McpServer {
     registerSales(target);
     registerMisc(target);
     registerSuppliers(target);
+    registerPaperlessDrafts(target);
 
     if (restricted) assertAllRegistered(DRAFT_TOOLS, restricted.registered());
     return server;
