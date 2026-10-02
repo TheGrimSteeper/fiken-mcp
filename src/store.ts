@@ -4,7 +4,8 @@ import { join } from "node:path";
 /**
  * Persistent state for the Paperless → Fiken draft flow, kept in FIKEN_DATA_DIR:
  * - state.json: per Paperless document, the Fiken ids created so far, so retries
- *   resume instead of duplicating inbox documents or drafts.
+ *   resume instead of duplicating inbox documents or drafts. Also, per bank statement
+ *   line booked as a private transfer, when it was attempted and booked.
  * - audit.jsonl: one JSON line per write attempt.
  */
 
@@ -17,9 +18,20 @@ export interface DocumentState {
     attachedAt?: string;
 }
 
+/** A statement line booked as a private transfer, keyed by its lineId. */
+export interface TransferState {
+    attemptedAt?: string;
+    bookedAt?: string;
+    /** Location header Fiken returned for the entry. */
+    location?: string;
+    date?: string;
+    amount?: number;
+}
+
 interface StateFile {
     version: 1;
     documents: Record<string, DocumentState>;
+    transfers?: Record<string, TransferState>;
 }
 
 export function dataDir(): string {
@@ -71,6 +83,22 @@ export async function updateDocument(
     return next;
 }
 
+export async function getTransfers(): Promise<Record<string, TransferState>> {
+    return (await load()).transfers ?? {};
+}
+
+export async function updateTransfer(
+    lineId: string,
+    patch: Partial<TransferState>,
+): Promise<TransferState> {
+    const state = await load();
+    const transfers = state.transfers ?? {};
+    const next = { ...transfers[lineId], ...patch };
+    transfers[lineId] = next;
+    await save({ ...state, transfers });
+    return next;
+}
+
 export interface AuditEntry {
     tool: string;
     event: string;
@@ -79,6 +107,10 @@ export interface AuditEntry {
     inboxDocumentId?: number;
     draftId?: number;
     totalGross?: number;
+    /** Private transfers: the statement line, its amount in øre and Fiken's Location header. */
+    lineId?: string;
+    amount?: number;
+    location?: string;
     error?: string;
 }
 

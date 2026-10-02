@@ -26,6 +26,13 @@ describe("index (http mode)", () => {
         expect(listen).toHaveBeenCalledWith(9999, "127.0.0.1", expect.any(Function));
     });
 
+    it("builds one server before listening, so bad settings stop the start", () => {
+        expect(createMcpServer).toHaveBeenCalledOnce();
+        expect(createMcpServer.mock.invocationCallOrder[0]).toBeLessThan(
+            listen.mock.invocationCallOrder[0],
+        );
+    });
+
     it("does not start stdio", () => {
         expect(MockStdioTransport).not.toHaveBeenCalled();
     });

@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { assertAllRegistered, restrictTools, toolProfile } from "../profile.js";
+import {
+    DRAFT_TOOLS,
+    PRIVATE_TRANSFER_TOOL,
+    assertAllRegistered,
+    draftTools,
+    restrictTools,
+    toolProfile,
+} from "../profile.js";
 
 describe("toolProfile", () => {
     it("defaults to full and accepts drafts", () => {
@@ -13,6 +20,34 @@ describe("toolProfile", () => {
         for (const value of ["", "DRAFTS", "readonly"]) {
             expect(() => toolProfile({ FIKEN_TOOL_PROFILE: value })).toThrow("FIKEN_TOOL_PROFILE");
         }
+    });
+});
+
+describe("draftTools", () => {
+    const settings = {
+        FIKEN_PRIVATE_BANK_ACCOUNTS: "11112233445",
+        FIKEN_PRIVATE_LEDGER_ACCOUNT: "2061",
+    };
+
+    it("leaves the booking tool out unless it is switched on", () => {
+        expect(draftTools({})).toBe(DRAFT_TOOLS);
+        expect(draftTools()).toBe(DRAFT_TOOLS);
+        expect(draftTools({ ...settings, FIKEN_PRIVATE_TRANSFERS: "off" })).toBe(DRAFT_TOOLS);
+        expect(DRAFT_TOOLS.has(PRIVATE_TRANSFER_TOOL)).toBe(false);
+    });
+
+    it("adds the booking tool when it is switched on and configured", () => {
+        const tools = draftTools({ ...settings, FIKEN_PRIVATE_TRANSFERS: "on" });
+        expect([...tools].sort()).toEqual([...DRAFT_TOOLS, PRIVATE_TRANSFER_TOOL].sort());
+    });
+
+    it("fails when it is switched on without its settings", () => {
+        expect(() => draftTools({ FIKEN_PRIVATE_TRANSFERS: "on" })).toThrow(
+            "PRIVATE_TRANSFERS_NOT_CONFIGURED",
+        );
+        expect(() => draftTools({ ...settings, FIKEN_PRIVATE_TRANSFERS: "yes" })).toThrow(
+            "FIKEN_PRIVATE_TRANSFERS",
+        );
     });
 });
 

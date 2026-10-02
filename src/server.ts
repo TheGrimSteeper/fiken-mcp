@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { DRAFT_TOOLS, assertAllRegistered, restrictTools, toolProfile } from "./profile.js";
+import { assertAllRegistered, draftTools, restrictTools, toolProfile } from "./profile.js";
 
 import { register as registerUser } from "./tools/user.js";
 import { register as registerAccounts } from "./tools/accounts.js";
@@ -15,17 +15,19 @@ import { register as registerSales } from "./tools/sales.js";
 import { register as registerMisc } from "./tools/misc.js";
 import { register as registerSuppliers } from "./tools/suppliers.js";
 import { register as registerPaperlessDrafts } from "./tools/paperlessDrafts.js";
+import { register as registerBankStatement } from "./tools/bankStatement.js";
 
 /**
- * Build an MCP server. In the "drafts" profile only DRAFT_TOOLS are registered;
- * every other tool is left out entirely.
+ * Build an MCP server. In the "drafts" profile only the tools from draftTools()
+ * are registered; every other tool is left out entirely.
  */
 export function createMcpServer(profile = toolProfile()): McpServer {
     const server = new McpServer({
         name: "fiken-mcp",
         version: "1.0.0",
     });
-    const restricted = profile === "drafts" ? restrictTools(server, DRAFT_TOOLS) : undefined;
+    const allowed = profile === "drafts" ? draftTools() : undefined;
+    const restricted = allowed ? restrictTools(server, allowed) : undefined;
     const target = restricted?.server ?? server;
 
     registerUser(target);
@@ -42,7 +44,8 @@ export function createMcpServer(profile = toolProfile()): McpServer {
     registerMisc(target);
     registerSuppliers(target);
     registerPaperlessDrafts(target);
+    registerBankStatement(target);
 
-    if (restricted) assertAllRegistered(DRAFT_TOOLS, restricted.registered());
+    if (restricted && allowed) assertAllRegistered(allowed, restricted.registered());
     return server;
 }

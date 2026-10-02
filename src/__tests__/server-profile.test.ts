@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createMcpServer } from "../server.js";
-import { DRAFT_TOOLS, type ToolProfile } from "../profile.js";
+import { DRAFT_TOOLS, PRIVATE_TRANSFER_TOOL, type ToolProfile } from "../profile.js";
 
 async function toolNames(profile: ToolProfile) {
     const server = createMcpServer(profile);
@@ -92,9 +92,45 @@ describe("createMcpServer tool profiles", () => {
         expect(JSON.stringify(result.content)).toContain("lines add up to 49900");
     });
 
-    it("full keeps every upstream tool plus the fork's three tools", async () => {
+    it("drafts reads the ledger but cannot write free journal entries", async () => {
+        const { names } = await toolNames("drafts");
+        expect(names).toContain("fiken_analyze_bank_statement");
+        expect(names).toContain("fiken_list_journal_entries");
+        expect(names).not.toContain(PRIVATE_TRANSFER_TOOL);
+    });
+
+    it("drafts adds the booking tool only when private transfers are switched on", async () => {
+        process.env.FIKEN_PRIVATE_TRANSFERS = "on";
+        try {
+            await expect(toolNames("drafts")).rejects.toThrow("PRIVATE_TRANSFERS_NOT_CONFIGURED");
+            process.env.FIKEN_PRIVATE_BANK_ACCOUNTS = "11112233445";
+            process.env.FIKEN_PRIVATE_LEDGER_ACCOUNT = "2061";
+            const { names, tools } = await toolNames("drafts");
+            expect(names).toEqual([...DRAFT_TOOLS, PRIVATE_TRANSFER_TOOL].sort());
+            expect(names).not.toContain("fiken_create_journal_entry");
+            const schema = tools.find((t) => t.name === PRIVATE_TRANSFER_TOOL)?.inputSchema as {
+                required: string[];
+                properties: Record<string, unknown>;
+            };
+            expect(schema.required).toEqual(["file", "lineIds"]);
+            // The caller names lines; it cannot pass an amount, an account or a date.
+            expect(Object.keys(schema.properties).sort()).toEqual([
+                "confirmRetry",
+                "file",
+                "lineIds",
+            ]);
+        } finally {
+            delete process.env.FIKEN_PRIVATE_TRANSFERS;
+            delete process.env.FIKEN_PRIVATE_BANK_ACCOUNTS;
+            delete process.env.FIKEN_PRIVATE_LEDGER_ACCOUNT;
+        }
+    });
+
+    it("full keeps every upstream tool plus the fork's five tools", async () => {
         const { names } = await toolNames("full");
-        expect(names.length).toBe(109);
+        expect(names.length).toBe(111);
+        expect(names).toContain("fiken_analyze_bank_statement");
+        expect(names).toContain(PRIVATE_TRANSFER_TOOL);
         expect(names).toContain("fiken_create_purchase_from_draft");
         expect(names).toContain("fiken_create_supplier");
         expect(names).toContain("fiken_create_purchase_draft_from_paperless");

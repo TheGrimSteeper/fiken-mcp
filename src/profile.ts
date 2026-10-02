@@ -1,10 +1,12 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { bookingConfig, privateTransfersEnabled } from "./bankConfig.js";
 
 export type ToolProfile = "full" | "drafts";
 
 /**
- * Tools available in the "drafts" profile. Everything else (finalising purchases,
- * deletes, invoices, sales, payments, journal entries, ...) is never registered.
+ * Tools always available in the "drafts" profile. Everything else (finalising
+ * purchases, deletes, invoices, sales, payments, free journal entries, ...) is
+ * never registered.
  */
 export const DRAFT_TOOLS: ReadonlySet<string> = new Set([
     // Reads
@@ -19,10 +21,27 @@ export const DRAFT_TOOLS: ReadonlySet<string> = new Set([
     "fiken_get_purchase_draft",
     "fiken_get_purchase_draft_attachments",
     "fiken_get_paperless_import_status",
+    "fiken_list_journal_entries",
+    "fiken_get_journal_entry",
+    "fiken_analyze_bank_statement",
     // Writes limited to validated drafts (always with the voucher attached) and suppliers
     "fiken_create_purchase_draft_from_paperless",
     "fiken_create_supplier",
 ]);
+
+/** The one write to the ledger itself. Only in the profile when it is switched on. */
+export const PRIVATE_TRANSFER_TOOL = "fiken_book_private_transfers";
+
+/**
+ * The tools of the "drafts" profile for this environment. With
+ * FIKEN_PRIVATE_TRANSFERS=on the booking tool is added, and incomplete settings
+ * for it are an error here rather than on the first call.
+ */
+export function draftTools(env: NodeJS.ProcessEnv = process.env): ReadonlySet<string> {
+    if (!privateTransfersEnabled(env)) return DRAFT_TOOLS;
+    bookingConfig(env);
+    return new Set([...DRAFT_TOOLS, PRIVATE_TRANSFER_TOOL]);
+}
 
 export function toolProfile(env: NodeJS.ProcessEnv = process.env): ToolProfile {
     const value = env.FIKEN_TOOL_PROFILE ?? "full";

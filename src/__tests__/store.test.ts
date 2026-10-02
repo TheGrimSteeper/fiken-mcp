@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { audit, dataDir, getDocument, updateDocument, withStateLock } from "../store.js";
+import {
+    audit,
+    dataDir,
+    getDocument,
+    getTransfers,
+    updateDocument,
+    updateTransfer,
+    withStateLock,
+} from "../store.js";
 
 let dir: string;
 
@@ -34,6 +42,17 @@ describe("store", () => {
         expect(await getDocument(7)).toEqual({});
         const raw = JSON.parse(await readFile(join(dir, "data", "state.json"), "utf8"));
         expect(raw).toEqual({ version: 1, documents: { "42": merged } });
+    });
+
+    it("keeps private transfers beside the documents", async () => {
+        expect(await getTransfers()).toEqual({});
+        await updateDocument(42, { draftId: 555 });
+        await updateTransfer("abc", { attemptedAt: "t1", amount: -100 });
+        const merged = await updateTransfer("abc", { bookedAt: "t2" });
+        await updateTransfer("def", { attemptedAt: "t3" });
+        expect(merged).toEqual({ attemptedAt: "t1", amount: -100, bookedAt: "t2" });
+        expect(await getTransfers()).toEqual({ abc: merged, def: { attemptedAt: "t3" } });
+        expect(await getDocument(42)).toEqual({ draftId: 555 });
     });
 
     it("refuses a state file with an unknown format", async () => {
