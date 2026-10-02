@@ -222,6 +222,28 @@ describe(TOOL, () => {
     });
 });
 
+describe(`${TOOL} cross-field validation`, () => {
+    it("rejects lines that do not add up to the total, before touching Fiken", async () => {
+        happyFiken();
+        const result = await call({ totalGross: 59900 });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("INVALID_INPUT");
+        expect(result.content[0].text).toContain(
+            "totalGross: lines add up to 49900 øre but the receipt total is 59900 øre",
+        );
+        expect(mockFetchForFiken).not.toHaveBeenCalled();
+        expect(mockUpload).not.toHaveBeenCalled();
+        expect(mockMutate).not.toHaveBeenCalled();
+    });
+
+    it("names the line whose VAT does not add up", async () => {
+        const result = await call({
+            lines: [{ ...input.lines[0], net: 49900 }],
+        });
+        expect(result.content[0].text).toContain("lines.0.gross: gross 49900 does not match");
+    });
+});
+
 describe("fiken_get_paperless_import_status", () => {
     it("shows what exists for a document", async () => {
         happyFiken();

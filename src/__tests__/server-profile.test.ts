@@ -10,7 +10,7 @@ async function toolNames(profile: ToolProfile) {
     const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
     await Promise.all([server.connect(serverSide), client.connect(clientSide)]);
     const { tools } = await client.listTools();
-    return { client, names: tools.map((t) => t.name).sort() };
+    return { client, tools, names: tools.map((t) => t.name).sort() };
 }
 
 const FORBIDDEN = [
@@ -42,6 +42,54 @@ describe("createMcpServer tool profiles", () => {
         });
         expect(result.isError).toBe(true);
         expect(JSON.stringify(result.content)).toContain("not found");
+    });
+
+    it("drafts advertises the parameters of the draft tool", async () => {
+        const { tools } = await toolNames("drafts");
+        const schema = tools.find((t) => t.name === "fiken_create_purchase_draft_from_paperless")
+            ?.inputSchema as {
+            required: string[];
+            properties: Record<
+                string,
+                { items?: { properties?: Record<string, { enum?: string[] }> } }
+            >;
+        };
+        expect(schema.required).toEqual(
+            expect.arrayContaining([
+                "paperlessDocumentId",
+                "invoiceIssueDate",
+                "cash",
+                "paid",
+                "totalGross",
+                "lines",
+            ]),
+        );
+        expect(schema.properties.lines.items?.properties?.vatType.enum).toContain("HIGH");
+    });
+
+    it("drafts rejects a total that the lines do not add up to", async () => {
+        const { client } = await toolNames("drafts");
+        const result = await client.callTool({
+            name: "fiken_create_purchase_draft_from_paperless",
+            arguments: {
+                paperlessDocumentId: 42,
+                invoiceIssueDate: "2026-09-28",
+                cash: true,
+                paid: true,
+                totalGross: 59900,
+                lines: [
+                    {
+                        text: "Fiskesluk",
+                        account: "6540",
+                        vatType: "HIGH",
+                        net: 39920,
+                        gross: 49900,
+                    },
+                ],
+            },
+        });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result.content)).toContain("lines add up to 49900");
     });
 
     it("full keeps every upstream tool plus the fork's three tools", async () => {

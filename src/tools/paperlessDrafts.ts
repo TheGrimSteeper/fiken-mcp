@@ -26,52 +26,52 @@ export function idFromLocation(location: unknown): number | undefined {
     return match ? Number(match[1]) : undefined;
 }
 
-export const draftInput = z
-    .object({
-        paperlessDocumentId: z.number().int().positive().describe("Paperless-ngx document id"),
-        invoiceIssueDate: isoDate.describe("Receipt or invoice date, YYYY-MM-DD"),
-        dueDate: isoDate.optional().describe("Due date for unpaid invoices, YYYY-MM-DD"),
-        invoiceNumber: z
-            .string()
-            .min(1)
-            .optional()
-            .describe("Supplier's invoice or receipt number"),
-        contactId: z
-            .number()
-            .int()
-            .positive()
-            .optional()
-            .describe("Fiken supplier contact id, from fiken_list_contacts"),
-        cash: z.boolean().describe("True for a cash/card purchase paid on the spot"),
-        paid: z.boolean().describe("True if already paid"),
-        currency: z
-            .string()
-            .regex(/^[A-Z]{3}$/, "must be an ISO 4217 code such as NOK")
-            .default("NOK"),
-        kid: z
-            .string()
-            .regex(/^\d{2,25}$/, "KID must be 2 to 25 digits")
-            .optional(),
-        projectId: z.number().int().positive().optional(),
-        payments: z
-            .array(
-                z.object({
-                    date: isoDate,
-                    account: accountCode.describe('Payment account, e.g. "1920:10001"'),
-                    amount: ore.describe("Amount paid in øre"),
-                }),
-            )
-            .optional(),
-        totalGross: ore.describe("Total on the receipt in øre, including VAT"),
-        lines: z.array(purchaseLine).min(1),
-        confirmRetry: z
-            .boolean()
-            .optional()
-            .describe(
-                "Only after checking fiken_list_purchase_drafts that an earlier failed attempt did not create a draft",
-            ),
-    })
-    .superRefine((input, ctx) => checkLines(input.lines, input.totalGross, ctx));
+// Kept as a plain object: the MCP SDK only advertises the parameters of an
+// object schema. With the cross-field check attached, tools/list showed none.
+const draftFields = z.object({
+    paperlessDocumentId: z.number().int().positive().describe("Paperless-ngx document id"),
+    invoiceIssueDate: isoDate.describe("Receipt or invoice date, YYYY-MM-DD"),
+    dueDate: isoDate.optional().describe("Due date for unpaid invoices, YYYY-MM-DD"),
+    invoiceNumber: z.string().min(1).optional().describe("Supplier's invoice or receipt number"),
+    contactId: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Fiken supplier contact id, from fiken_list_contacts"),
+    cash: z.boolean().describe("True for a cash/card purchase paid on the spot"),
+    paid: z.boolean().describe("True if already paid"),
+    currency: z
+        .string()
+        .regex(/^[A-Z]{3}$/, "must be an ISO 4217 code such as NOK")
+        .default("NOK"),
+    kid: z
+        .string()
+        .regex(/^\d{2,25}$/, "KID must be 2 to 25 digits")
+        .optional(),
+    projectId: z.number().int().positive().optional(),
+    payments: z
+        .array(
+            z.object({
+                date: isoDate,
+                account: accountCode.describe('Payment account, e.g. "1920:10001"'),
+                amount: ore.describe("Amount paid in øre"),
+            }),
+        )
+        .optional(),
+    totalGross: ore.describe("Total on the receipt in øre, including VAT"),
+    lines: z.array(purchaseLine).min(1),
+    confirmRetry: z
+        .boolean()
+        .optional()
+        .describe(
+            "Only after checking fiken_list_purchase_drafts that an earlier failed attempt did not create a draft",
+        ),
+});
+
+export const draftInput = draftFields.superRefine((input, ctx) =>
+    checkLines(input.lines, input.totalGross, ctx),
+);
 
 type DraftInput = z.infer<typeof draftInput>;
 
@@ -212,9 +212,16 @@ export function register(server: McpServer) {
                 "Creates a purchase draft in Fiken from a Paperless document: uploads the original to the Fiken inbox, " +
                 "creates the draft and attaches the document. Safe to call again with the same paperlessDocumentId: " +
                 "it resumes where it stopped and never creates a second draft. Amounts are in øre. Never finalises the purchase.",
-            inputSchema: draftInput,
+            inputSchema: draftFields,
         },
-        async (input) => withStateLock(() => createDraft(input as DraftInput)),
+        async (input) => {
+            const parsed = draftInput.safeParse(input);
+            if (!parsed.success) {
+                const issues = parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+                return err(`INVALID_INPUT: ${issues.join("; ")}`);
+            }
+            return withStateLock(() => createDraft(parsed.data));
+        },
     );
 
     server.registerTool(
